@@ -9,10 +9,10 @@ from torch import nn
 import torch
 import numpy as np 
 
-path = "data/pho-mt-data.json"
+path = "/kaggle/input/phomt-dataset/dataset"
 
 print("Loading vocab ... ")
-vocab = Vocab.make_vocab(path="data", src_language="vietnamese", tgt_language="english") 
+vocab = Vocab(path=path, src_language="vietnamese", tgt_language="english")
 
 print("Creating model ... ")
 config = Config()
@@ -21,7 +21,7 @@ loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
 optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 print("Loading dataset ... ")
 train_dataset = PhoMTDataset(
-    path="data/pho-mt-train.json",
+    path="/kaggle/input/phomt-dataset/dataset/train.json",
     vocab=vocab
 )
 train_dataloader = DataLoader(
@@ -32,7 +32,7 @@ train_dataloader = DataLoader(
 )
 
 dev_dataset = PhoMTDataset(
-    path="data/pho-mt-dev.json",
+    path="/kaggle/input/phomt-dataset/dataset/dev.json",
     vocab=vocab
 )
 dev_dataloader = DataLoader(
@@ -43,7 +43,7 @@ dev_dataloader = DataLoader(
 )
 
 test_dataset = PhoMTDataset(
-    path="data/pho-mt-test.json",
+    path="/kaggle/input/phomt-dataset/dataset/test.json",
     vocab=vocab
 )   
 test_dataloader = DataLoader(
