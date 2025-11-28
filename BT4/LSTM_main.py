@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from torch import nn 
 import torch
 import numpy as np 
+from tqdm import tqdm 
 
 path = "/kaggle/input/phomt-dataset/dataset"
 
@@ -146,7 +147,14 @@ print("Starting training ... ")
 for epoch in range(config.num_epochs):
     model.train()
     total_loss = 0
-    for batch in train_dataloader:
+    
+    # ⭐️ THÊM THANH TIẾN TRÌNH TẠI ĐÂY ⭐️
+    # Wrap train_dataloader bằng tqdm()
+    # Thêm mô tả (desc) để biết đây là epoch nào
+    # Thêm thanh tiến trình (bar) để hiển thị loss hiện tại
+    train_bar = tqdm(train_dataloader, desc=f"Epoch {epoch} Training")
+    
+    for batch in train_bar:
         src = batch["vietnamese"].to(config.device)
         tgt = batch["english"].to(config.device)
 
@@ -154,14 +162,20 @@ for epoch in range(config.num_epochs):
         loss = model(src, tgt)
 
         loss.backward()
-
         optimizer.step()
 
         total_loss += loss.item()
+        
+        # Cập nhật thông tin trên thanh tiến trình với loss hiện tại
+        current_loss = loss.item()
+        train_bar.set_postfix(loss=f"{current_loss:.4f}")
     
+    # Tính toán và in ra average loss sau khi hoàn thành epoch
     avg_loss = total_loss / len(train_dataloader)
     print(f"Epoch {epoch}, Training Loss: {avg_loss:.4f}")
-    dev_loss = evaluate(model, dev_dataloader)
+    
+    # Đánh giá trên tập Dev
+    dev_loss, _ = evaluate(model, dev_dataloader, vocab, config.device, deeper_evaluate=False)
     print(f"Epoch {epoch}, Dev Loss: {dev_loss:.4f}")
 
 print("Evaluating on test set ... ")

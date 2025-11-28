@@ -61,6 +61,7 @@ class LSTM(nn.Module):
         self.decoder = Decoder(vocab, config)
         self.loss = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
         self.vocab = vocab
+        self.config = config
         encoder_state_dim = config.hidden_dim
         decoder_state_dim = config.hidden_dim * 2 if config.bidirectional else config.hidden_dim
 
