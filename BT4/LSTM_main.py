@@ -9,180 +9,181 @@ from torch import nn
 import torch
 import numpy as np 
 from tqdm import tqdm 
+import os 
+import time
 
+# --- CẤU HÌNH HỆ THỐNG ---
+os.makedirs("checkpoints", exist_ok=True)
+BEST_MODEL_PATH = "checkpoints/best_model.pt"
 path = "/kaggle/input/phomt-dataset/dataset"
 
+# --- KHỞI TẠO ---
 print("Loading vocab ... ")
 vocab = Vocab(path=path, src_language="vietnamese", tgt_language="english")
 
 print("Creating model ... ")
 config = Config()
 model = LSTM(vocab, config).to(config.device)
-loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx)
+# loss_fn chỉ dùng bên trong class LSTM nếu cần, ở đây ta khai báo để tường minh nhưng model tự xử lý
+loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx) 
 optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+
 print("Loading dataset ... ")
-train_dataset = PhoMTDataset(
-    path="/kaggle/input/phomt-dataset/dataset/train.json",
-    vocab=vocab
-)
-train_dataloader = DataLoader(
-    dataset=train_dataset,
-    batch_size=config.batch_size,
-    shuffle=True,
-    collate_fn=collate_fn
-)
+train_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/train.json", vocab=vocab)
+train_dataloader = DataLoader(dataset=train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, collate_fn=collate_fn)
 
-dev_dataset = PhoMTDataset(
-    path="/kaggle/input/phomt-dataset/dataset/dev.json",
-    vocab=vocab
-)
-dev_dataloader = DataLoader(
-    dataset=dev_dataset,
-    batch_size=1,
-    shuffle=False,
-    collate_fn=collate_fn
-)
+dev_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/dev.json", vocab=vocab)
+dev_dataloader = DataLoader(dataset=dev_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
-test_dataset = PhoMTDataset(
-    path="/kaggle/input/phomt-dataset/dataset/test.json",
-    vocab=vocab
-)   
-test_dataloader = DataLoader(
-    dataset=test_dataset,
-    batch_size=1,
-    shuffle=False,
-    collate_fn=collate_fn
-)
+test_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/test.json", vocab=vocab)   
+test_dataloader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
+# --- HÀM ĐÁNH GIÁ (ĐÃ SỬA: Loại bỏ tham số loss_fn thừa) ---
 def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_language="vietnamese", tgt_language="english"):
-    """
-    Đánh giá mô hình trên tập dữ liệu phát triển hoặc kiểm tra.
-
-    Args:
-        model (nn.Module): Mô hình Seq2Seq (LSTM).
-        dataloader (DataLoader): DataLoader cho tập Dev hoặc Test (batch_size=1).
-        vocab (Vocab): Đối tượng từ vựng để giải mã.
-        device (torch.device): Thiết bị (CPU/GPU).
-        deeper_evaluate (bool): True nếu muốn tính BLEU, ROUGE, METEOR.
-
-    Returns:
-        tuple: (average_loss, metrics_scores)
-    """
-    # 1. Đặt mô hình ở chế độ đánh giá
     model.eval()
     total_loss = 0
+    gens = {}  
+    gts = {}   
+    sample_index = 0 
     
-    # Khởi tạo từ điển để lưu trữ câu dự đoán và câu tham chiếu
-    gens = {}  # Generations (câu dự đoán)
-    gts = {}   # Ground Truths (câu tham chiếu)
-
-    sample_index = 0 # Chỉ mục bắt đầu từ 0
-    
-    # 2. Bắt đầu quá trình đánh giá
     with torch.no_grad():
         for batch in dataloader:
-            # Dữ liệu được chuyển lên device (config.device)
             src = batch[src_language].to(device)
             tgt = batch[tgt_language].to(device)
             
-            # --- TÍNH LOSS ---
-            # Gọi forward pass của mô hình. Dựa trên mô tả của bạn, hàm này trả về loss trực tiếp.
+            # Tính LOSS
             loss = model(src, tgt) 
             total_loss += loss.item()
             
-            
-            # --- THỰC HIỆN DỰ ĐOÁN (Inference) cho Deeper Evaluation ---
             if deeper_evaluate:
-                # 3. Lấy token dự đoán
-                # Giả định model.predict(src) trả về tensor chứa các token dự đoán (batch_size=1)
                 prediction_tokens = model.predict(src) 
                 
-                # 4. Giải mã và lưu trữ
-                
-                # prediction_tokens: tensor (1, seq_len). Ta lấy .tolist() của tensor đầu tiên.
+                # Giải mã
                 prediction_sentence = vocab.decode_sentence(prediction_tokens[0].tolist())
-                
-                # label_tokens: tensor tgt[0] chứa các ID target (bao gồm <sos> và <eos>)
                 label_tokens = tgt[0].tolist() 
                 label_sentence = vocab.decode_sentence(label_tokens)
 
-                # Vì batch_size=1, ta chỉ lấy phần tử đầu tiên
-                id = sample_index # Giả định batch có key "id"
-                gens[id] = [prediction_sentence] # Danh sách các câu dự đoán
-                gts[id] = [label_sentence]      # Danh sách các câu tham chiếu (reference)
+                id = sample_index
+                gens[id] = [prediction_sentence] 
+                gts[id] = [label_sentence]     
                 sample_index += 1
                 
-    # 5. Tính Loss trung bình
     avg_loss = total_loss / len(dataloader)
-    
-    # 6. --- TÍNH TOÁN METRICS (BLEU, ROUGE, METEOR) ---
     metrics_scores = {}
-    if deeper_evaluate:
-        # Tạo list câu dự đoán và tham chiếu theo thứ tự ID
+    
+    if deeper_evaluate and len(gens) > 0:
         ids = sorted(gens.keys())
-        # Tạo list predictions (gens[i] là list ['câu dự đoán'])
         predictions = [gens[i][0] for i in ids] 
-        # Tạo list references (gts[i] là list ['câu tham chiếu'])
-        references = [[gts[i][0]] for i in ids] # references cần là list of list
+        references = [[gts[i][0]] for i in ids] 
 
-        # Tính điểm BLEU
         bleu_metric = Bleu()
-        # compute_score trả về tuple: (bleu_scores, cumulative_scores)
+        # compute_score trả về (scores, cumulative_scores)
         metrics_scores['BLEU'] = bleu_metric.compute_score(predictions, references) 
         
-        # Tính điểm ROUGE
         rouge_metric = Rouge()
-        # compute_score trả về tuple: (rouge_l_score)
         metrics_scores['ROUGE'] = rouge_metric.compute_score(predictions, references)
         
-        # Tính điểm METEOR
         meteor_metric = Meteor()
-        # compute_score trả về tuple: (meteor_score)
         metrics_scores['METEOR'] = meteor_metric.compute_score(predictions, references)
             
     return avg_loss, metrics_scores
 
 
+# --- VÒNG LẶP HUẤN LUYỆN CHÍNH ---
+
 print("Starting training ... ")
+
+# ⭐️ CẤU HÌNH PATIENCE (EARLY STOPPING) DỰA TRÊN BLEU ⭐️
+# BLEU càng cao càng tốt, nên khởi tạo là số rất nhỏ
+best_bleu_score = -1.0 
+patience_limit = 5  # Dừng nếu sau 5 epoch BLEU không tăng
+patience_counter = 0
+
 for epoch in range(config.num_epochs):
+    start_time = time.time()
     model.train()
     total_loss = 0
     
-    # ⭐️ THÊM THANH TIẾN TRÌNH TẠI ĐÂY ⭐️
-    # Wrap train_dataloader bằng tqdm()
-    # Thêm mô tả (desc) để biết đây là epoch nào
-    # Thêm thanh tiến trình (bar) để hiển thị loss hiện tại
     train_bar = tqdm(train_dataloader, desc=f"Epoch {epoch} Training")
     
+    # 1. TRAINING
     for batch in train_bar:
         src = batch["vietnamese"].to(config.device)
         tgt = batch["english"].to(config.device)
 
         optimizer.zero_grad()
         loss = model(src, tgt)
-
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item()
-        
-        # Cập nhật thông tin trên thanh tiến trình với loss hiện tại
-        current_loss = loss.item()
-        train_bar.set_postfix(loss=f"{current_loss:.4f}")
+        train_bar.set_postfix(loss=f"{loss.item():.4f}")
     
-    # Tính toán và in ra average loss sau khi hoàn thành epoch
-    avg_loss = total_loss / len(train_dataloader)
-    print(f"Epoch {epoch}, Training Loss: {avg_loss:.4f}")
+    avg_train_loss = total_loss / len(train_dataloader)
     
-    # Đánh giá trên tập Dev
-    dev_loss, _ = evaluate(model, dev_dataloader, vocab, config.device, deeper_evaluate=False)
-    print(f"Epoch {epoch}, Dev Loss: {dev_loss:.4f}")
+    # 2. EVALUATION (Bắt buộc bật deeper_evaluate=True để lấy BLEU)
+    # Lưu ý: Không truyền loss_fn vào đây nữa
+    dev_loss, dev_metrics = evaluate(
+        model, 
+        dev_dataloader, 
+        vocab, 
+        config.device, 
+        deeper_evaluate=True 
+    )
+    
+    end_time = time.time()
+    epoch_mins = int((end_time - start_time) / 60)
+    epoch_secs = int((end_time - start_time) % 60)
+    
+    # 3. TRÍCH XUẤT BLEU-4
+    current_bleu_4 = 0.0
+    if 'BLEU' in dev_metrics:
+        # metrics['BLEU'][0] là mảng [BLEU-1, BLEU-2, BLEU-3, BLEU-4]
+        # Ta lấy phần tử index 3 là BLEU-4
+        current_bleu_4 = dev_metrics['BLEU'][0][3]
 
-print("Evaluating on test set ... ")
+    print(f"\n--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
+    print(f"Training Loss: {avg_train_loss:.4f} | Dev Loss: {dev_loss:.4f}")
+    print(f"⭐️ Dev BLEU-4 Score: {current_bleu_4*100:.2f}%")
+
+    # 4. LOGIC PATIENCE (Dựa trên BLEU-4)
+    if current_bleu_4 > best_bleu_score:
+        best_bleu_score = current_bleu_4
+        # Lưu mô hình tốt nhất
+        torch.save(model.state_dict(), BEST_MODEL_PATH)
+        print(f"  >>> SAVED: New best model found! (BLEU-4: {best_bleu_score*100:.2f}%)")
+        patience_counter = 0 # Reset bộ đếm
+    else:
+        patience_counter += 1
+        print(f"  >>> No improvement in BLEU. Patience: {patience_counter}/{patience_limit}")
+
+    # 5. KIỂM TRA DỪNG SỚM
+    if patience_counter >= patience_limit:
+        print(f"\n*** EARLY STOPPING TRIGGERED ***")
+        print(f"Mô hình không cải thiện BLEU sau {patience_limit} epoch liên tiếp.")
+        break
+
+# ----------------------------------------------------------------------
+# --- ĐÁNH GIÁ CUỐI CÙNG ---
+
+print("\nEvaluating on test set using the BEST saved model ... ")
+
+try:
+    model.load_state_dict(torch.load(BEST_MODEL_PATH))
+    print(f"Đã tải mô hình tốt nhất từ {BEST_MODEL_PATH}")
+except Exception as e:
+    print(f"Lỗi tải mô hình: {e}. Sử dụng mô hình hiện tại.")
+
 test_loss, test_metrics = evaluate(model, test_dataloader, vocab, config.device, deeper_evaluate=True)
+
+print(f"\n--- FINAL TEST RESULTS ---")
 print(f"Test Loss: {test_loss:.4f}")
-for metric_name, score in test_metrics.items():
-    print(f"{metric_name} Score: {score:.4f}")
-
-
-
+if 'BLEU' in test_metrics:
+    print(f"BLEU-4 Score: {test_metrics['BLEU'][0][3]*100:.2f}%")
+if 'ROUGE' in test_metrics:
+    # ROUGE thường trả về 1 số float hoặc tuple, xử lý tùy library
+    val = test_metrics['ROUGE'][0] if isinstance(test_metrics['ROUGE'], tuple) else test_metrics['ROUGE']
+    print(f"ROUGE-L Score: {val*100:.2f}%")
+if 'METEOR' in test_metrics:
+    val = test_metrics['METEOR'][0] if isinstance(test_metrics['METEOR'], tuple) else test_metrics['METEOR']
+    print(f"METEOR Score: {val*100:.2f}%")

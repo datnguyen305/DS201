@@ -10,4 +10,4 @@ class LSTM_config:
     learning_rate = 0.001
     batch_size = 128
     num_epochs = 20
-    
+    num_workers = 4
