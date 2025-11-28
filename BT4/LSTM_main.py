@@ -58,10 +58,15 @@ def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_langua
             if deeper_evaluate:
                 prediction_tokens = model.predict(src) 
                 
-                # Giải mã
-                prediction_sentence = vocab.decode_sentence(prediction_tokens[0].tolist())
+                # --- SỬA LỖI TẠI ĐÂY ---
+                # Thêm tham số tgt_language vào decode_sentence
+                
+                # Giải mã câu dự đoán (Prediction) - Dùng ngôn ngữ đích (English)
+                prediction_sentence = vocab.decode_sentence(prediction_tokens[0].tolist(), tgt_language)
+                
+                # Giải mã câu nhãn (Label) - Dùng ngôn ngữ đích (English)
                 label_tokens = tgt[0].tolist() 
-                label_sentence = vocab.decode_sentence(label_tokens)
+                label_sentence = vocab.decode_sentence(label_tokens, tgt_language)
 
                 id = sample_index
                 gens[id] = [prediction_sentence] 
@@ -76,8 +81,8 @@ def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_langua
         predictions = [gens[i][0] for i in ids] 
         references = [[gts[i][0]] for i in ids] 
 
+        # Tính toán Metrics
         bleu_metric = Bleu()
-        # compute_score trả về (scores, cumulative_scores)
         metrics_scores['BLEU'] = bleu_metric.compute_score(predictions, references) 
         
         rouge_metric = Rouge()
