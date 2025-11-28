@@ -1,6 +1,6 @@
 import torch 
 import torch.nn as nn
-from BT4 import vocab
+from vocab import Vocab
 
 class Encoder(nn.Module):
     def __init__(self, vocab, config):
