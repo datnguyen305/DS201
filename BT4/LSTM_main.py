@@ -62,6 +62,8 @@ test_dataloader = DataLoader(
 def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_language="vietnamese", tgt_language="english"):
     model.eval()
     total_loss = 0
+    
+    # Dictionary lưu kết quả: { 'id': ['câu'] }
     gens = {}  
     gts = {}   
     sample_index = 0 
@@ -76,23 +78,18 @@ def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_langua
             total_loss += loss.item()
             
             if deeper_evaluate:
-                # model.predict trả về Tensor (Batch_Size=1, Seq_Len)
                 prediction_tokens = model.predict(src) 
                 
-                # --- SỬA CHỮA QUAN TRỌNG ---
-                # Vocab.decode_sentence mong đợi Batch Tensor (2D).
-                # prediction_tokens có shape (1, Len), tgt có shape (1, Len).
-                # Ta truyền trực tiếp vào, hàm vocab sẽ trả về List[str] có 1 phần tử.
-                
-                # 1. Giải mã dự đoán
+                # Giải mã (Lưu ý: vocab.decode_sentence đã sửa để nhận Tensor)
                 prediction_sentences_list = vocab.decode_sentence(prediction_tokens, tgt_language)
-                prediction_sentence = prediction_sentences_list[0] # Lấy câu đầu tiên
+                prediction_sentence = prediction_sentences_list[0]
                 
-                # 2. Giải mã nhãn (Label)
                 label_sentences_list = vocab.decode_sentence(tgt, tgt_language)
-                label_sentence = label_sentences_list[0] # Lấy câu đầu tiên
+                label_sentence = label_sentences_list[0]
 
-                id = sample_index
+                # Lưu vào Dictionary
+                # Chuyển ID sang string để an toàn nhất với các thư viện eval
+                id = str(sample_index) 
                 gens[id] = [prediction_sentence] 
                 gts[id] = [label_sentence]     
                 sample_index += 1
@@ -101,19 +98,30 @@ def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_langua
     metrics_scores = {}
     
     if deeper_evaluate and len(gens) > 0:
-        ids = sorted(gens.keys())
-        predictions = [gens[i][0] for i in ids] 
-        references = [[gts[i][0]] for i in ids] 
+        # --- SỬA LỖI TẠI ĐÂY ---
+        
+        # CŨ (Gây lỗi):
+        # predictions = [gens[i][0] for i in sorted(gens.keys())] 
+        # references = [[gts[i][0]] for i in sorted(gens.keys())] 
+        # metrics_scores['BLEU'] = bleu_metric.compute_score(predictions, references) 
 
+        # MỚI (Đúng): Truyền trực tiếp Dictionary
+        # Thứ tự tham số chuẩn thường là: (gts, res) -> (Ground Truth, Result)
+        
         bleu_metric = Bleu()
-        # compute_score trả về (scores, cumulative_scores)
-        metrics_scores['BLEU'] = bleu_metric.compute_score(predictions, references) 
+        # compute_score trả về (bleu_avg, bleu_list)
+        metrics_scores['BLEU'] = bleu_metric.compute_score(gts, gens) 
         
         rouge_metric = Rouge()
-        metrics_scores['ROUGE'] = rouge_metric.compute_score(predictions, references)
+        metrics_scores['ROUGE'] = rouge_metric.compute_score(gts, gens)
         
-        meteor_metric = Meteor()
-        metrics_scores['METEOR'] = meteor_metric.compute_score(predictions, references)
+        # METEOR cần Java, dùng try-except để không crash nếu lỗi môi trường
+        try:
+            meteor_metric = Meteor()
+            metrics_scores['METEOR'] = meteor_metric.compute_score(gts, gens)
+        except Exception as e:
+            print(f"Skipping METEOR due to error: {e}")
+            metrics_scores['METEOR'] = (0.0, 0.0)
             
     return avg_loss, metrics_scores
 
@@ -165,12 +173,18 @@ for epoch in range(config.num_epochs):
     # 3. TRÍCH XUẤT BLEU-4
     current_bleu_4 = 0.0
     if 'BLEU' in dev_metrics:
-        # metrics['BLEU'][0] là mảng [BLEU-1, ... BLEU-4]
-        current_bleu_4 = dev_metrics['BLEU'][0][3]
+        # dev_metrics['BLEU'] là tuple: (avg_scores, all_scores)
+        # avg_scores là list: [bleu1, bleu2, bleu3, bleu4]
+        # Ta lấy phần tử đầu tiên của tuple [0], sau đó lấy index 3 (BLEU-4)
+        score_list = dev_metrics['BLEU'][0]
+        if isinstance(score_list, list) and len(score_list) >= 4:
+            current_bleu_4 = score_list[3]
+        else:
+             # Fallback nếu thư viện trả về format khác
+            current_bleu_4 = 0.0
 
-    print(f"\n--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
-    print(f"Training Loss: {avg_train_loss:.4f} | Dev Loss: {dev_loss:.4f}")
-    print(f"⭐️ Dev BLEU-4 Score: {current_bleu_4*100:.2f}%")
+    print(f"\n--- Epoch {epoch+1:02d} Complete ---")
+    print(f"Dev BLEU-4 Score: {current_bleu_4*100:.2f}%")
 
     # 4. EARLY STOPPING CHECK
     if current_bleu_4 > best_bleu_score:
