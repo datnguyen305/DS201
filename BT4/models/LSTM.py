@@ -30,7 +30,7 @@ class Decoder(nn.Module):
             config.hidden_dim*2 if config.bidirectional else config.hidden_dim,
             num_layers=config.num_layers,
             dropout=config.dropout,
-            bidirectional=config.bidirectional,
+            bidirectional=False,
             batch_first=True
         )
     def forward(self, encoder_outputs, states, target):
