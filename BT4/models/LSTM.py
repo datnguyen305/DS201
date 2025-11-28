@@ -22,6 +22,7 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, vocab, config): 
         super().__init__()
+        self.vocab = vocab
         self.config = config 
         self.embedding = nn.Embedding(vocab.tgt_vocab_size, config.embedding_dim)
         self.lstm = nn.LSTM(
@@ -35,7 +36,7 @@ class Decoder(nn.Module):
     def forward(self, encoder_outputs, states, target):
         batch_size = encoder_outputs.size(0)
         target_len = target.size(1)
-        decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(vocab.Vocab.bos_idx).to(self.config.device)
+        decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
         decoder_outputs = []
         for i in range(target_len):
             decoder_output, states = self.forward_step(decoder_input, states)
@@ -66,14 +67,14 @@ class LSTM(nn.Module):
     def predict(self, src): 
         encoder_outputs, states = self.encoder(src)
         batch_size = encoder_outputs.size(0)
-        decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(vocab.Vocab.bos_idx).to(self.config.device)
+        decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
         predictions = []
         while True:
             decoder_output, states = self.decoder.forward_step(decoder_input, states)
             pred_token = decoder_output.argmax(-1)  # (batch_size, 1)
             predictions.append(pred_token)
             decoder_input = pred_token
-            if pred_token.eq(vocab.Vocab.eos_idx).all():
+            if pred_token.eq(self.vocab.eos_idx).all():
                 break
         predictions = torch.cat(predictions, dim=1)  # (batch_size, max_tgt_len)
         return predictions
