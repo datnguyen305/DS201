@@ -45,6 +45,7 @@ class Decoder(nn.Module):
             decoder_outputs.append(decoder_output)
             # Here comes the teacher forcing
             decoder_input = target[:, i+1].unsqueeze(1)
+        decoder_outputs = torch.cat(decoder_outputs, dim=1)
         return decoder_outputs, states
 
 
@@ -70,6 +71,7 @@ class LSTM(nn.Module):
         hidden_reshaped, cell_reshaped = self._reshape_encoder_states(states[0], states[1])
         states_reshaped = (hidden_reshaped, cell_reshaped)
         outs, _ = self.decoder(encoder_outputs, states_reshaped, tgt)
+        
         loss = self.loss(outs.reshape(-1, self.vocab.tgt_vocab_size), tgt.reshape(-1)) # loss input: (N, C), target: (N)
         return loss
     
