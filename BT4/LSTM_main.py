@@ -62,7 +62,7 @@ def evaluate(model, dataloader, vocab, device, deeper_evaluate=False, src_langua
                 # Thêm tham số tgt_language vào decode_sentence
                 
                 # Giải mã câu dự đoán (Prediction) - Dùng ngôn ngữ đích (English)
-                prediction_sentence = vocab.decode_sentence(prediction_tokens[0].tolist(), tgt_language)
+                prediction_sentence = vocab.decode_sentence(prediction_tokens[0], tgt_language)
                 
                 # Giải mã câu nhãn (Label) - Dùng ngôn ngữ đích (English)
                 label_tokens = tgt[0].tolist() 
