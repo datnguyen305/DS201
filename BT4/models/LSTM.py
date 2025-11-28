@@ -40,11 +40,11 @@ class Decoder(nn.Module):
         target_len = target.size(1)
         decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
         decoder_outputs = []
-        for i in range(target_len - 1):
+        for i in range(target_len):
             decoder_output, states = self.forward_step(decoder_input, states)
             decoder_outputs.append(decoder_output)
             # Here comes the teacher forcing
-            decoder_input = target[:, i+1].unsqueeze(1)
+            decoder_input = target[:, i].unsqueeze(1)
         decoder_outputs = torch.cat(decoder_outputs, dim=1)
         return decoder_outputs, states
 
