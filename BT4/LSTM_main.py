@@ -4,10 +4,10 @@ from config.config import LSTM_config as Config
 from models.LSTM import LSTM
 from dataset import PhoMTDataset, collate_fn
 
-# Chỉ import Bleu, Rouge từ file cũ của bạn. BỎ Meteor cũ.
-from custom_metric import Bleu, Rouge
+# Import từ file metric của bạn (đã đổi tên)
+from custom_metric import Bleu, Rouge 
 
-# Import thư viện Hugging Face để tính METEOR không bị lỗi
+# Import thư viện Hugging Face
 import evaluate as hf_evaluate 
 import nltk
 
@@ -19,12 +19,12 @@ from tqdm import tqdm
 import os 
 import time
 
-# --- TẢI DỮ LIỆU NLTK (Cần thiết cho METEOR mới) ---
+# --- TẢI DATA ---
 nltk.download('wordnet')
 nltk.download('punkt')
 nltk.download('omw-1.4')
 
-# --- CẤU HÌNH HỆ THỐNG ---
+# --- CẤU HÌNH ---
 os.makedirs("checkpoints", exist_ok=True)
 BEST_MODEL_PATH = "checkpoints/best_model.pt"
 path = "/kaggle/input/phomt-dataset/dataset"
@@ -39,44 +39,24 @@ model = LSTM(vocab, config).to(config.device)
 loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx) 
 optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
-# Load METEOR metric của Hugging Face (Load 1 lần để dùng lại)
+# Load METEOR
+print("Loading METEOR metric...")
 meteor_hf = hf_evaluate.load('meteor')
 
 print("Loading dataset ... ")
+# (Giữ nguyên phần load dataset của bạn)
 train_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/train.json", vocab=vocab)
-train_dataloader = DataLoader(
-    dataset=train_dataset, 
-    batch_size=config.batch_size, 
-    shuffle=True, 
-    num_workers=config.num_workers, 
-    collate_fn=collate_fn
-)
+train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, collate_fn=collate_fn)
 
 dev_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/dev.json", vocab=vocab)
-dev_dataloader = DataLoader(
-    dataset=dev_dataset, 
-    batch_size=1, 
-    shuffle=False, 
-    num_workers=config.num_workers, 
-    collate_fn=collate_fn
-)
+dev_dataloader = DataLoader(dev_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
 test_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/test.json", vocab=vocab)   
-test_dataloader = DataLoader(
-    dataset=test_dataset, 
-    batch_size=1, 
-    shuffle=False, 
-    num_workers=config.num_workers, 
-    collate_fn=collate_fn
-)
+test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
-# --- HÀM ĐÁNH GIÁ (ĐÃ SỬA METEOR) ---
+# --- HÀM ĐÁNH GIÁ (ĐÃ SỬA: TÍNH METEOR TRƯỚC) ---
 def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language="vietnamese", tgt_language="english"):
-    """
-    Đổi tên hàm thành evaluate_model để tránh trùng tên với thư viện evaluate
-    """
-    if metrics is None:
-        metrics = []
+    if metrics is None: metrics = []
         
     model.eval()
     total_loss = 0
@@ -91,11 +71,9 @@ def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language=
             src = batch[src_language].to(device)
             tgt = batch[tgt_language].to(device)
             
-            # 1. Tính LOSS
             loss = model(src, tgt) 
             total_loss += loss.item()
             
-            # 2. Dự đoán
             if need_predictions:
                 prediction_tokens = model.predict(src) 
                 
@@ -116,30 +94,34 @@ def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language=
     # 3. Tính toán Metrics
     if need_predictions and len(gens) > 0:
         
-        # --- TÍNH BLEU (Dùng code cũ của bạn) ---
+        # ===> ƯU TIÊN TÍNH METEOR TRƯỚC <===
+        if 'meteor' in metrics:
+            try:
+                # Convert data
+                predictions_list = [v[0] for v in gens.values()]
+                references_list = [v[0] for v in gts.values()]
+                
+                # Compute
+                result = meteor_hf.compute(predictions=predictions_list, references=references_list)
+                val = result['meteor']
+                metrics_scores['METEOR'] = (val, val)
+                
+                # IN NGAY LẬP TỨC ĐỂ KIỂM TRA
+                print(f"   >>> [DEBUG] METEOR Calculated: {val*100:.2f}%")
+                
+            except Exception as e:
+                print(f"   >>> [ERROR] METEOR Failed: {e}")
+                metrics_scores['METEOR'] = (0.0, 0.0)
+
+        # --- SAU ĐÓ MỚI TÍNH BLEU ---
         if 'bleu' in metrics:
             bleu_metric = Bleu()
             metrics_scores['BLEU'] = bleu_metric.compute_score(gts, gens) 
         
-        # --- TÍNH ROUGE (Dùng code cũ của bạn) ---
+        # --- TÍNH ROUGE ---
         if 'rouge' in metrics:
             rouge_metric = Rouge()
             metrics_scores['ROUGE'] = rouge_metric.compute_score(gts, gens)
-        
-        # --- TÍNH METEOR (Dùng thư viện mới Hugging Face) ---
-        if 'meteor' in metrics:
-            try:
-                # Chuyển đổi dữ liệu từ dict sang list cho Hugging Face
-                # gens[id] là list chứa 1 string -> lấy phần tử [0]
-                predictions_list = [v[0] for v in gens.values()]
-                references_list = [v[0] for v in gts.values()]
-                
-                # Tính điểm (trả về dictionary {'meteor': 0.xxxx})
-                result = meteor_hf.compute(predictions=predictions_list, references=references_list)
-                metrics_scores['METEOR'] = (result['meteor'], result['meteor']) # Lưu dạng tuple cho đồng bộ
-            except Exception as e:
-                print(f"Error computing METEOR: {e}")
-                metrics_scores['METEOR'] = (0.0, 0.0)
             
     return avg_loss, metrics_scores
 
@@ -159,7 +141,6 @@ for epoch in range(config.num_epochs):
     
     train_bar = tqdm(train_dataloader, desc=f"Epoch {epoch+1} Training")
     
-    # 1. TRAINING LOOP
     for batch in train_bar:
         src = batch["vietnamese"].to(config.device)
         tgt = batch["english"].to(config.device)
@@ -167,7 +148,7 @@ for epoch in range(config.num_epochs):
         optimizer.zero_grad()
         loss = model(src, tgt)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) # Khuyên dùng: Clip grad để tránh bùng nổ gradient
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) 
         optimizer.step()
 
         total_loss += loss.item()
@@ -175,21 +156,23 @@ for epoch in range(config.num_epochs):
     
     avg_train_loss = total_loss / len(train_dataloader)
     
-    # 2. EVALUATION TRÊN DEV
+    # --- EVALUATION TRÊN DEV ---
     print(f"Evaluating Epoch {epoch+1}...")
+    
+    # THAY ĐỔI Ở ĐÂY: Thêm 'meteor' vào list metrics để kiểm tra ngay trong quá trình train
     dev_loss, dev_metrics = evaluate_model(
         model, 
         dev_dataloader, 
         vocab, 
         config.device, 
-        metrics=['bleu'] # Chỉ tính BLEU để tiết kiệm thời gian
+        metrics=['meteor', 'bleu'] # <--- Đã thêm meteor vào đây
     )
     
     end_time = time.time()
     epoch_mins = int((end_time - start_time) / 60)
     epoch_secs = int((end_time - start_time) % 60)
     
-    # 3. TRÍCH XUẤT BLEU-4
+    # Lấy BLEU-4 để check Early Stopping
     current_bleu_4 = 0.0
     if 'BLEU' in dev_metrics:
         score_list = dev_metrics['BLEU'][0]
@@ -198,20 +181,26 @@ for epoch in range(config.num_epochs):
 
     print(f"\n--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
     print(f"Training Loss: {avg_train_loss:.4f} | Dev Loss: {dev_loss:.4f}")
+    
+    # In kết quả METEOR ra màn hình console của epoch
+    if 'METEOR' in dev_metrics:
+        meteor_val = dev_metrics['METEOR'][0]
+        print(f"⭐️ Dev METEOR: {meteor_val*100:.2f}%") # <--- In METEOR trước
+        
     print(f"⭐️ Dev BLEU-4 Score: {current_bleu_4*100:.2f}%")
 
-    # 4. EARLY STOPPING & PATIENCE CHECK (Phần bạn yêu cầu)
+    # Early Stopping Check (Vẫn dựa trên BLEU-4 là chuẩn nhất)
     if current_bleu_4 > best_bleu_score:
         best_bleu_score = current_bleu_4
         torch.save(model.state_dict(), BEST_MODEL_PATH)
-        print(f" >>> SAVED: New best model found! (BLEU-4: {best_bleu_score*100:.2f}%)")
-        patience_counter = 0 # Reset patience
+        print(f" >>> SAVED: New best model found!")
+        patience_counter = 0 
     else:
         patience_counter += 1
         print(f" >>> No improvement. Patience: {patience_counter}/{patience_limit}")
 
     if patience_counter >= patience_limit:
-        print(f"\n*** EARLY STOPPING TRIGGERED: Model did not improve for {patience_limit} epochs. ***")
+        print(f"\n*** EARLY STOPPING TRIGGERED ***")
         break
 
 # --- ĐÁNH GIÁ CUỐI CÙNG ---
@@ -223,23 +212,27 @@ try:
         model.load_state_dict(torch.load(BEST_MODEL_PATH))
         print(f"Đã tải mô hình tốt nhất từ {BEST_MODEL_PATH}")
     else:
-        print("Không tìm thấy file model checkpoint. Sử dụng model hiện tại.")
+        print("Không tìm thấy file model checkpoint.")
 except Exception as e:
-    print(f"Lỗi tải mô hình: {e}. Sử dụng mô hình hiện tại.")
+    print(f"Lỗi tải mô hình: {e}")
 
-# Tính tất cả metrics cho test set
 test_loss, test_metrics = evaluate_model(
     model, 
     test_dataloader, 
     vocab, 
     config.device, 
-    metrics=['bleu', 'rouge', 'meteor'] 
+    metrics=['meteor', 'bleu', 'rouge'] # Ưu tiên thứ tự list này
 )
 
 print(f"\n--- FINAL TEST RESULTS ---")
 print(f"Test Loss: {test_loss:.4f}")
 
-# 1. IN ĐẦY ĐỦ BLEU
+# 1. IN METEOR TRƯỚC (Theo yêu cầu của bạn)
+if 'METEOR' in test_metrics:
+    val = test_metrics['METEOR'][0] if isinstance(test_metrics['METEOR'], tuple) else test_metrics['METEOR']
+    print(f"METEOR: {val*100:.2f}%")
+
+# 2. SAU ĐÓ IN BLEU
 if 'BLEU' in test_metrics:
     bleu_scores = test_metrics['BLEU'][0]
     if isinstance(bleu_scores, list) and len(bleu_scores) >= 4:
@@ -250,12 +243,7 @@ if 'BLEU' in test_metrics:
     else:
         print(f"BLEU Score: {bleu_scores}")
 
-# 2. IN ROUGE
+# 3. CUỐI CÙNG IN ROUGE
 if 'ROUGE' in test_metrics:
     val = test_metrics['ROUGE'][0] if isinstance(test_metrics['ROUGE'], tuple) else test_metrics['ROUGE']
     print(f"ROUGE-L: {val*100:.2f}%")
-
-# 3. IN METEOR
-if 'METEOR' in test_metrics:
-    val = test_metrics['METEOR'][0] if isinstance(test_metrics['METEOR'], tuple) else test_metrics['METEOR']
-    print(f"METEOR: {val*100:.2f}%")
