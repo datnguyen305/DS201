@@ -206,23 +206,38 @@ try:
 except Exception as e:
     print(f"Lỗi tải mô hình: {e}. Sử dụng mô hình hiện tại.")
 
-# --- THAY ĐỔI TẠI ĐÂY: metrics=['bleu', 'rouge', 'meteor'] ---
+# Tính metrics
 test_loss, test_metrics = evaluate(
     model, 
     test_dataloader, 
     vocab, 
     config.device, 
-    metrics=['bleu', 'rouge', 'meteor'] # Tính hết cho tập Test
+    metrics=['bleu', 'rouge', 'meteor']
 )
 
 print(f"\n--- FINAL TEST RESULTS ---")
 print(f"Test Loss: {test_loss:.4f}")
 
+# 1. IN ĐẦY ĐỦ BLEU-1, 2, 3, 4
 if 'BLEU' in test_metrics:
-    print(f"BLEU-4 Score: {test_metrics['BLEU'][0][3]*100:.2f}%")
+    # test_metrics['BLEU'][0] chứa list [b1, b2, b3, b4]
+    bleu_scores = test_metrics['BLEU'][0]
+    
+    if isinstance(bleu_scores, list) and len(bleu_scores) >= 4:
+        print(f"BLEU-1: {bleu_scores[0]*100:.2f}%")
+        print(f"BLEU-2: {bleu_scores[1]*100:.2f}%")
+        print(f"BLEU-3: {bleu_scores[2]*100:.2f}%")
+        print(f"BLEU-4: {bleu_scores[3]*100:.2f}%")
+    else:
+        print(f"BLEU Score: {bleu_scores}")
+
+# 2. IN ROUGE
 if 'ROUGE' in test_metrics:
+    # ROUGE của bạn thường trả về ROUGE-L
     val = test_metrics['ROUGE'][0] if isinstance(test_metrics['ROUGE'], tuple) else test_metrics['ROUGE']
-    print(f"ROUGE-L Score: {val*100:.2f}%")
+    print(f"ROUGE-L: {val*100:.2f}%")
+
+# 3. IN METEOR
 if 'METEOR' in test_metrics:
     val = test_metrics['METEOR'][0] if isinstance(test_metrics['METEOR'], tuple) else test_metrics['METEOR']
-    print(f"METEOR Score: {val*100:.2f}%")
+    print(f"METEOR: {val*100:.2f}%")
