@@ -5,7 +5,7 @@ from models.LSTM import LSTM
 from dataset import PhoMTDataset, collate_fn
 
 # Chỉ import Bleu, Rouge từ file cũ của bạn. BỎ Meteor cũ.
-from evaluate import Bleu, Rouge 
+from custom_metric import Bleu, Rouge
 
 # Import thư viện Hugging Face để tính METEOR không bị lỗi
 import evaluate as hf_evaluate 
@@ -20,12 +20,9 @@ import os
 import time
 
 # --- TẢI DỮ LIỆU NLTK (Cần thiết cho METEOR mới) ---
-try:
-    nltk.data.find('corpora/wordnet')
-except LookupError:
-    nltk.download('wordnet')
-    nltk.download('punkt')
-    nltk.download('omw-1.4')
+nltk.download('wordnet')
+nltk.download('punkt')
+nltk.download('omw-1.4')
 
 # --- CẤU HÌNH HỆ THỐNG ---
 os.makedirs("checkpoints", exist_ok=True)
