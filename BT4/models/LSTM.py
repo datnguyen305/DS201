@@ -88,28 +88,20 @@ class LSTM(nn.Module):
             
         return hidden, cell
     
-    def predict(self, src): 
+    def predict(self, src, max_len=100):
         encoder_outputs, states = self.encoder(src)
-        
         hidden_reshaped, cell_reshaped = self._reshape_encoder_states(states[0], states[1])
         states_reshaped = (hidden_reshaped, cell_reshaped)
         
         batch_size = src.size(0)
         decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
-        predictions = []
+        predicted_tokens = []
         
-        # Greedy Decoding
-        while True:
-            # decoder_output shape: (batch_size, vocab_size)
+        for _ in range(max_len):
             decoder_output, states_reshaped = self.decoder.forward_step(decoder_input, states_reshaped)
+            top1 = decoder_output.argmax(1) 
+            predicted_tokens.append(top1.unsqueeze(1)) 
+            decoder_input = top1.unsqueeze(1) 
             
-            pred_token = decoder_output.argmax(-1).unsqueeze(1) 
-            predictions.append(pred_token)
-            
-            decoder_input = pred_token
-            
-            if pred_token.eq(self.vocab.eos_idx).all():
-                break
-                
-        predictions = torch.cat(predictions, dim=1)
-        return predictions
+        predicted_tokens = torch.cat(predicted_tokens, dim=1) 
+        return predicted_tokens
