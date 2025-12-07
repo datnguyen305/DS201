@@ -145,7 +145,7 @@ class BahdanauLSTM(nn.Module):
             hidden = torch.cat((hidden[:, 0, :, :], hidden[:, 1, :, :]), dim=2)
             cell = torch.cat((cell[:, 0, :, :], cell[:, 1, :, :]), dim=2)
         return hidden, cell
-    def predict(self, src, max_len=100):
+    def predict(self, src, tgt):
         encoder_outputs, encoder_states = self.encoder(src)
         hidden_reshaped, cell_reshaped = self._reshape_encoder_states(encoder_states[0], encoder_states[1])
         encoder_states = (hidden_reshaped, cell_reshaped)
@@ -153,6 +153,7 @@ class BahdanauLSTM(nn.Module):
         decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
         decoder_states = encoder_states
         predictions = []
+        max_len = tgt.size(1)
         encoder_output_mask = create_mask(encoder_outputs, self.vocab.pad_idx)
         for _ in range(max_len):
             decoder_output, decoder_states, _ = self.decoder.forward_step(
