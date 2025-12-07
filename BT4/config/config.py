@@ -11,6 +11,7 @@ class LSTM_config:
     batch_size = 128
     num_epochs = 50
     num_workers = 4
+    clip = 1.0
 
 class BahdanauLSTM_config:
     embedding_dim = 256
@@ -23,3 +24,4 @@ class BahdanauLSTM_config:
     num_epochs = 50
     num_workers = 4
     bidirectional = True
+    clip = 1.0
