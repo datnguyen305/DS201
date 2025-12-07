@@ -127,11 +127,10 @@ def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language=
 
 
 # --- VÒNG LẶP HUẤN LUYỆN CHÍNH ---
-
 print("Starting training ... ")
 
-# THAY ĐỔI: Theo dõi BLEU-1 để Early Stopping
-best_bleu1_score = -1.0 
+# THAY ĐỔI 1: Theo dõi BLEU-4 để Early Stopping
+best_bleu4_score = -1.0 
 patience_limit = 5  
 patience_counter = 0
 
@@ -175,41 +174,43 @@ for epoch in range(config.num_epochs):
     
     # --- LẤY GIÁ TRỊ METRIC ---
     
-    # 1. Lấy METEOR
+    # 1. Lấy METEOR (để in ra xem tham khảo)
     current_meteor = 0.0
     if 'METEOR' in dev_metrics:
         current_meteor = dev_metrics['METEOR'][0] if isinstance(dev_metrics['METEOR'], tuple) else dev_metrics['METEOR']
 
-    # 2. Lấy BLEU-1 (Mục tiêu mới)
-    current_bleu1 = 0.0
+    # 2. Lấy BLEU-4 (Mục tiêu chính để Early Stopping)
+    current_bleu4 = 0.0
     if 'BLEU' in dev_metrics:
         # dev_metrics['BLEU'] thường trả về tuple: ([b1, b2, b3, b4], details)
         score_list = dev_metrics['BLEU'][0]
-        if isinstance(score_list, list) and len(score_list) >= 1:
-            current_bleu1 = score_list[0] # <--- Index 0 là BLEU-1
+        
+        # Kiểm tra xem list có đủ 4 phần tử không
+        if isinstance(score_list, list) and len(score_list) >= 4:
+            current_bleu4 = score_list[3] # <--- THAY ĐỔI QUAN TRỌNG: Index 3 là BLEU-4
+        else:
+            print(" [WARNING] Không tìm thấy điểm BLEU-4 trong kết quả trả về.")
 
     # --- IN KẾT QUẢ ---
     print(f"--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
     print(f"Training Loss: {avg_train_loss:.4f} | Dev Loss: {dev_loss:.4f}")
-    
-    # In METEOR
     print(f"⭐️ Dev METEOR: {current_meteor*100:.2f}%")
     
-    # In BLEU-1
-    print(f"⭐️ Dev BLEU-1: {current_bleu1*100:.2f}%") # <--- In BLEU-1 ở đây
+    # In BLEU-4
+    print(f"⭐️ Dev BLEU-4: {current_bleu4*100:.2f}%") 
 
-    # --- EARLY STOPPING CHECK (Dựa trên BLEU-1) ---
-    if current_bleu1 > best_bleu1_score:
-        best_bleu1_score = current_bleu1
+    # --- EARLY STOPPING CHECK (Dựa trên BLEU-4) ---
+    if current_bleu4 > best_bleu4_score:
+        best_bleu4_score = current_bleu4
         torch.save(model.state_dict(), BEST_MODEL_PATH)
-        print(f" >>> SAVED: New best model found (BLEU-1: {best_bleu1_score*100:.2f}%)")
+        print(f" >>> SAVED: New best model found (BLEU-4: {best_bleu4_score*100:.2f}%)")
         patience_counter = 0 
     else:
         patience_counter += 1
-        print(f" >>> No improvement. Patience: {patience_counter}/{patience_limit}")
+        print(f" >>> No improvement in BLEU-4. Patience: {patience_counter}/{patience_limit}")
 
     if patience_counter >= patience_limit:
-        print(f"\n*** EARLY STOPPING TRIGGERED ***")
+        print(f"\n*** EARLY STOPPING TRIGGERED (No improve in BLEU-4 for {patience_limit} epochs) ***")
         break
     print("\n")
 # --- ĐÁNH GIÁ CUỐI CÙNG ---
