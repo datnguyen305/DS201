@@ -75,7 +75,7 @@ def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language=
             total_loss += loss.item()
             
             if need_predictions:
-                prediction_tokens = model.predict(src) 
+                prediction_tokens = model.predict(src, tgt) 
                 
                 prediction_sentences_list = vocab.decode_sentence(prediction_tokens, tgt_language)
                 prediction_sentence = prediction_sentences_list[0]
@@ -130,7 +130,8 @@ def evaluate_model(model, dataloader, vocab, device, metrics=None, src_language=
 
 print("Starting training ... ")
 
-best_bleu_score = -1.0 
+# THAY ĐỔI: Theo dõi BLEU-1 để Early Stopping
+best_bleu1_score = -1.0 
 patience_limit = 5  
 patience_counter = 0
 
@@ -148,7 +149,7 @@ for epoch in range(config.num_epochs):
         optimizer.zero_grad()
         loss = model(src, tgt)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) 
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config.clip) 
         optimizer.step()
 
         total_loss += loss.item()
@@ -156,44 +157,52 @@ for epoch in range(config.num_epochs):
     
     avg_train_loss = total_loss / len(train_dataloader)
     
-    # --- EVALUATION TRÊN DEV ---
+    # --- EVALUATION ---
     print(f"Evaluating Epoch {epoch+1}...")
     
-    # THAY ĐỔI Ở ĐÂY: Thêm 'meteor' vào list metrics để kiểm tra ngay trong quá trình train
+    # Tính toán METEOR và BLEU
     dev_loss, dev_metrics = evaluate_model(
         model, 
         dev_dataloader, 
         vocab, 
         config.device, 
-        metrics=['meteor', 'bleu'] # <--- Đã thêm meteor vào đây
+        metrics=['meteor', 'bleu'] 
     )
     
     end_time = time.time()
     epoch_mins = int((end_time - start_time) / 60)
     epoch_secs = int((end_time - start_time) % 60)
     
-    # Lấy BLEU-4 để check Early Stopping
-    current_bleu_4 = 0.0
-    if 'BLEU' in dev_metrics:
-        score_list = dev_metrics['BLEU'][0]
-        if isinstance(score_list, list) and len(score_list) >= 4:
-            current_bleu_4 = score_list[3]
+    # --- LẤY GIÁ TRỊ METRIC ---
+    
+    # 1. Lấy METEOR
+    current_meteor = 0.0
+    if 'METEOR' in dev_metrics:
+        current_meteor = dev_metrics['METEOR'][0] if isinstance(dev_metrics['METEOR'], tuple) else dev_metrics['METEOR']
 
-    print(f"\n--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
+    # 2. Lấy BLEU-1 (Mục tiêu mới)
+    current_bleu1 = 0.0
+    if 'BLEU' in dev_metrics:
+        # dev_metrics['BLEU'] thường trả về tuple: ([b1, b2, b3, b4], details)
+        score_list = dev_metrics['BLEU'][0]
+        if isinstance(score_list, list) and len(score_list) >= 1:
+            current_bleu1 = score_list[0] # <--- Index 0 là BLEU-1
+
+    # --- IN KẾT QUẢ ---
+    print(f"--- Epoch {epoch+1:02d} Complete (Time: {epoch_mins}m {epoch_secs}s) ---")
     print(f"Training Loss: {avg_train_loss:.4f} | Dev Loss: {dev_loss:.4f}")
     
-    # In kết quả METEOR ra màn hình console của epoch
-    if 'METEOR' in dev_metrics:
-        meteor_val = dev_metrics['METEOR'][0]
-        print(f"⭐️ Dev METEOR: {meteor_val*100:.2f}%") # <--- In METEOR trước
-        
-    print(f"⭐️ Dev BLEU-4 Score: {current_bleu_4*100:.2f}%")
+    # In METEOR
+    print(f"⭐️ Dev METEOR: {current_meteor*100:.2f}%")
+    
+    # In BLEU-1
+    print(f"⭐️ Dev BLEU-1: {current_bleu1*100:.2f}%") # <--- In BLEU-1 ở đây
 
-    # Early Stopping Check (Vẫn dựa trên BLEU-4 là chuẩn nhất)
-    if current_bleu_4 > best_bleu_score:
-        best_bleu_score = current_bleu_4
+    # --- EARLY STOPPING CHECK (Dựa trên BLEU-1) ---
+    if current_bleu1 > best_bleu1_score:
+        best_bleu1_score = current_bleu1
         torch.save(model.state_dict(), BEST_MODEL_PATH)
-        print(f" >>> SAVED: New best model found!")
+        print(f" >>> SAVED: New best model found (BLEU-1: {best_bleu1_score*100:.2f}%)")
         patience_counter = 0 
     else:
         patience_counter += 1
@@ -202,7 +211,7 @@ for epoch in range(config.num_epochs):
     if patience_counter >= patience_limit:
         print(f"\n*** EARLY STOPPING TRIGGERED ***")
         break
-
+    print("\n")
 # --- ĐÁNH GIÁ CUỐI CÙNG ---
 
 print("\nEvaluating on test set using the BEST saved model ... ")

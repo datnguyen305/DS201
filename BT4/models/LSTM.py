@@ -88,7 +88,7 @@ class LSTM(nn.Module):
             
         return hidden, cell
     
-    def predict(self, src, max_len=100):
+    def predict(self, src, tgt):
         encoder_outputs, states = self.encoder(src)
         hidden_reshaped, cell_reshaped = self._reshape_encoder_states(states[0], states[1])
         states_reshaped = (hidden_reshaped, cell_reshaped)
@@ -96,6 +96,7 @@ class LSTM(nn.Module):
         batch_size = src.size(0)
         decoder_input = torch.empty(batch_size, 1, dtype=torch.long).fill_(self.vocab.bos_idx).to(self.config.device)
         predicted_tokens = []
+        max_len = tgt.size(1)
         
         for _ in range(max_len):
             decoder_output, states_reshaped = self.decoder.forward_step(decoder_input, states_reshaped)
