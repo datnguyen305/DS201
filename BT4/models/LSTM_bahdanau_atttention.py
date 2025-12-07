@@ -66,7 +66,7 @@ class Decoder(nn.Module):
         self.embedding = nn.Embedding(
             vocab.tgt_vocab_size,
             config.embedding_dim,
-            padding_idx=vocab.tgt_pad_idx
+            padding_idx=vocab.pad_idx
         )
         self.lstm = nn.LSTM(
             config.embedding_dim + (config.hidden_dim *2),
