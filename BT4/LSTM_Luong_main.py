@@ -1,7 +1,7 @@
 # --- IMPORTS ---
 from vocab import Vocab
-from config.config import BahdanauLSTM_config as Config
-from models.LSTM_bahdanau_atttention import BahdanauLSTM
+from config.config import LuongLSTM_config as Config
+from models.LSTM_luong_attention import LuongLSTM
 from dataset import PhoMTDataset, collate_fn
 
 # Import từ file metric của bạn (đã đổi tên)
@@ -35,7 +35,7 @@ vocab = Vocab(path=path, src_language="vietnamese", tgt_language="english")
 
 print("Creating model ... ")
 config = Config()
-model = BahdanauLSTM(vocab, config).to(config.device)
+model = LuongLSTM(vocab, config).to(config.device)
 loss_fn = nn.CrossEntropyLoss(ignore_index=vocab.pad_idx) 
 optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 

@@ -141,7 +141,7 @@ class Decoder(nn.Module):
         logit = self.fc_out(output)
         return logit, state, attn_weights  
     
-class BahdanauLSTM(nn.Module):
+class LuongLSTM(nn.Module):
     def __init__(self, vocab, config):
         super().__init__()
         self.encoder = Encoder(vocab, config)
