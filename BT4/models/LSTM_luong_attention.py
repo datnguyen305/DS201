@@ -39,23 +39,44 @@ class LuongAttention(nn.Module):
         self.W2 = nn.Linear(config.hidden_dim * 2, config.hidden_dim)
         self.V = nn.Linear(config.hidden_dim, 1)
         self.W3 = nn.Linear(config.hidden_dim, 1)
+        self.W4 = nn.Linear(config.hidden_dim * 2, 1)
+        self.type = config.attention_type  # 'dot', 'general', 'concat'
 
     def forward(self, encoder_outputs, decoder_hidden, mask):
         # encoder_outputs: (B, S, 2*hidden_size)
         # decoder_hidden: (B, 2*hidden_size))
+        if self.type == 'concat':
+            # Additive attention
+            scores = self.V(torch.tanh(self.W1(encoder_outputs) + self.W2(decoder_hidden.unsqueeze(1)))).squeeze(-1)
+            # (B, S, 2*hidden_size) + (B, 1, hidden_size) -> (B, S, hidden_size) -> (B, S)
+            scores = scores.masked_fill(mask == 0, -1e9)
 
-        # Additive attention
-        scores = self.V(torch.tanh(self.W1(encoder_outputs) + self.W2(decoder_hidden.unsqueeze(1)))).squeeze(-1)
-        # (B, S, 2*hidden_size) + (B, 1, hidden_size) -> (B, S, hidden_size) -> (B, S)
-        scores = scores.masked_fill(mask == 0, -1e9)
+            # Attention weights
+            alphas = F.softmax(scores, dim=-1)
 
-        # Attention weights
-        alphas = F.softmax(scores, dim=-1)
+            # The context vector is the weighted sum of the values.
+            context = torch.bmm(alphas.unsqueeze(1), encoder_outputs)
 
-        # The context vector is the weighted sum of the values.
-        context = torch.bmm(alphas.unsqueeze(1), encoder_outputs)
+            # context shape: [B, 1, D], alphas shape: [B, 1, M]
+        elif self.type == 'general':
+            # General attention
+            # encode_outputs: (B, S, 2*hidden_size)
+            # decoder_hidden: (B, 2*hidden_size)
+            # W4(decoder_hidden): (B, 1, 1)
+            # => Through bmm -> (B, S)
+            scores = torch.bmm(encoder_outputs, self.W4(decoder_hidden).unsqueeze(2)).squeeze(-1)
+            scores = scores.masked_fill(mask == 0, -1e9)
+            alphas = F.softmax(scores, dim=-1)
+            context = torch.bmm(alphas.unsqueeze(1), encoder_outputs)
 
-        # context shape: [B, 1, D], alphas shape: [B, 1, M]
+        elif self.type == 'dot':
+            # Dot-product attention
+            # encoder_outputs: (B, S, 2*hidden_size)
+            # decoder_hidden.unsqueeze(2): (B, 2*hidden_size, 1)
+            scores = torch.bmm(encoder_outputs, decoder_hidden.unsqueeze(2)).squeeze(-1)
+            scores = scores.masked_fill(mask == 0, -1e9)    
+            alphas = F.softmax(scores, dim=-1)
+            context = torch.bmm(alphas.unsqueeze(1), encoder_outputs)
         return context, alphas
     
 class Decoder(nn.Module):
@@ -78,7 +99,7 @@ class Decoder(nn.Module):
             device=config.device
         )
         self.dropout = nn.Dropout(config.dropout)   
-        self.attention = BahdanauAttention(config)
+        self.attention = LuongAttention(config)
         self.fc_out = nn.Linear(config.hidden_dim*2, vocab.tgt_vocab_size)
     def forward(self, input, encoder_outputs, states, target):
         batch_size = target.size(0)
