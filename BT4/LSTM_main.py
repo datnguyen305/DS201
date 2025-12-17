@@ -27,7 +27,7 @@ nltk.download('omw-1.4')
 # --- CẤU HÌNH ---
 os.makedirs("checkpoints", exist_ok=True)
 BEST_MODEL_PATH = "checkpoints/best_model.pt"
-path = "/kaggle/input/phomt-dataset/dataset"
+path = "/kaggle/input/phomt-dataset"
 
 # --- KHỞI TẠO ---
 print("Loading vocab ... ")
@@ -45,13 +45,13 @@ meteor_hf = hf_evaluate.load('meteor')
 
 print("Loading dataset ... ")
 # (Giữ nguyên phần load dataset của bạn)
-train_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/train.json", vocab=vocab)
+train_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/train.json", vocab=vocab)
 train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers, collate_fn=collate_fn)
 
-dev_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/dev.json", vocab=vocab)
+dev_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dev.json", vocab=vocab)
 dev_dataloader = DataLoader(dev_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
-test_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/dataset/test.json", vocab=vocab)   
+test_dataset = PhoMTDataset(path="/kaggle/input/phomt-dataset/test.json", vocab=vocab)   
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=config.num_workers, collate_fn=collate_fn)
 
 # --- HÀM ĐÁNH GIÁ (ĐÃ SỬA: TÍNH METEOR TRƯỚC) ---
