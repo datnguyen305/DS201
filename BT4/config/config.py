@@ -8,7 +8,7 @@ class LSTM_config:
     bidirectional = True
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     learning_rate = 0.001
-    batch_size = 128
+    batch_size = 64
     num_epochs = 50
     num_workers = 4
     clip = 1.0
