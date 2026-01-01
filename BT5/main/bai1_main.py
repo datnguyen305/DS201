@@ -14,9 +14,9 @@ from model.classification import TransformerModel
 class Config:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    TRAIN_PATH = "/kaggle/working/23520728_Lab5_DeepLearning/ViOCD/train.json"
-    DEV_PATH   = "/kaggle/working/23520728_Lab5_DeepLearning/ViOCD/dev.json"
-    TEST_PATH  = "/kaggle/working/23520728_Lab5_DeepLearning/ViOCD/test.json"
+    TRAIN_PATH = "/kaggle/input/lab5-dataset/lab5/train.json"
+    DEV_PATH   = "/kaggle/input/lab5-dataset/lab5/dev.json"
+    TEST_PATH  = "/kaggle/input/lab5-dataset/lab5/test.json"
     SAVE_PATH  = "/kaggle/working/transformer_base.pth"
     MIN_FREQ   = 1
 
