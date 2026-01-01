@@ -7,7 +7,7 @@ import math
 from tqdm import tqdm
 from sklearn.metrics import f1_score, classification_report, accuracy_score
 
-from dataloader import ViOCD_Dataset, collate_fn
+from dataloader.viocd_dataset import ViOCD_Dataset, collate_fn
 from vocab import Vocabulary
 from model.classification import TransformerModel
 
